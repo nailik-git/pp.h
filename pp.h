@@ -169,7 +169,7 @@ static int __pp_print_dispatcher(FILE* restrict f, const char* restrict fmt, va_
     case 'c':
     case 's':
     case 'p':
-      num_printed = vprintf(__pp_tmp_fmt_to_printf(fmt), ap);
+      num_printed = vfprintf(f, __pp_tmp_fmt_to_printf(fmt), ap);
       break;
     case 'n':
       errno = 0;

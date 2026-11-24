@@ -16,10 +16,10 @@ typedef union {
 } Vec3;
 
 int print_vec2(FILE* f, Vec2 v) {
-  return fprintf(f, "{%d, %d}", v.x, v.y);
+  return fprint(f, "\\{{d}, {d}\\}", v.x, v.y);
 }
 int print_vec3(FILE* f, Vec3 v) {
-  return fprintf(f, "{%d, %d, %d}", v.x, v.y, v.z);
+  return fprint(f, "\\{{d}, {d}, {d}\\}", v.x, v.y, v.z);
 }
 
 int print_vec(FILE* f, const char* fmt, va_list ap) {
