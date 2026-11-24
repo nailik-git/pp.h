@@ -75,10 +75,14 @@ int PP_VSPRINT(char* restrict str, size_t size, const char* restrict fmt, va_lis
 //
 // fails if the specifier is already defined by printf, errno is then set to EINVAL
 //
+// if the specifier already has a registered formatter, it will be overwritten, no error
+// will be indicated
+//
 // formatter_func shall pull the arguments it uses out of ap
 // formatter_func shall return the number of bytes printed to stdout
 int PP_REGISTER_FORMATTER(char specifier, PP_FORMATTER_F formatter_func);
 
+#define PP_IMPLEMENTATION
 #ifdef PP_IMPLEMENTATION
 // ------------------------------------------------------------------------------------------------
 // implementation
@@ -89,16 +93,13 @@ int PP_REGISTER_FORMATTER(char specifier, PP_FORMATTER_F formatter_func);
 #include <assert.h>
 #include <stdbool.h>
 
+#define __PP_FORMATTER_COUNT 256
+
 typedef struct {
   PP_FORMATTER_F function;
-  char specifier;
 } __pp_formatter_t;
 
-struct {
-  __pp_formatter_t* items;
-  size_t count;
-  size_t capacity;
-} __pp = {0};
+thread_local static __pp_formatter_t __pp[__PP_FORMATTER_COUNT] = {0};
 
 static ssize_t __pp_strtcpy(char *restrict dst, size_t dsize, const char *restrict src, size_t slen) {
   bool   trunc;
@@ -130,7 +131,7 @@ static char __pp_get_first_char_escaped(const char* restrict* fmt) {
 }
 
 static const char* __pp_tmp_fmt_to_printf(const char* restrict fmt) {
-  static char buf[0x1000] = "%";
+  thread_local static char buf[0x1000] = "%";
   char* p = buf + 1;
 
   if(fmt[1] == ':') {
@@ -151,24 +152,24 @@ static int __pp_print_dispatcher(FILE* restrict f, const char* restrict fmt, va_
   int num_printed = 0;
 
   switch(*fmt) {
-    case 'd':
-    case 'i':
-    case 'u':
-    case 'b':
-    case 'o':
-    case 'x':
-    case 'X':
-    case 'e':
-    case 'E':
-    case 'f':
-    case 'F':
-    case 'g':
-    case 'G':
-    case 'a':
     case 'A':
+    case 'E':
+    case 'F':
+    case 'G':
+    case 'X':
+    case 'a':
+    case 'b':
     case 'c':
-    case 's':
+    case 'd':
+    case 'e':
+    case 'f':
+    case 'g':
+    case 'i':
+    case 'o':
     case 'p':
+    case 's':
+    case 'u':
+    case 'x':
       num_printed = vfprintf(f, __pp_tmp_fmt_to_printf(fmt), ap);
       break;
     case 'n':
@@ -176,12 +177,7 @@ static int __pp_print_dispatcher(FILE* restrict f, const char* restrict fmt, va_
       num_printed = -1;
       break;
     default:
-      for(size_t i = 0; i < __pp.count; i++) {
-        if(__pp.items[i].specifier == *fmt) {
-          num_printed = __pp.items[i].function(f, fmt[1] == ':' ? fmt + 2 : fmt + 1, ap);
-          break;
-        }
-      }
+      num_printed = __pp[(int)*fmt].function(f, fmt[1] == ':' ? fmt + 2 : fmt + 1, ap);
       break;
   }
 
@@ -236,7 +232,7 @@ int PP_VFPRINT(FILE* restrict f, const char* restrict fmt, va_list ap) {
     bool escaped = saved != fmt;
 
     if(!escaped && c == '{') { // start of format parameter
-      static char buf[0x1000] = "";
+      thread_local static char buf[0x1000] = "";
       char* p = buf;
 
       fmt++;
@@ -331,24 +327,7 @@ int PP_REGISTER_FORMATTER(char specifier, PP_FORMATTER_F formatter_func) {
       return -1;
   }
 
-  __pp_formatter_t item = {.function = formatter_func, .specifier = specifier};
-
-  if(__pp.capacity == 0) {
-    __pp.items = malloc((__pp.capacity = 8) * sizeof(item));
-    if(__pp.items == NULL) {
-      __pp.capacity = 0;
-      return -1;
-    }
-  } else if(__pp.count == __pp.capacity) {
-    __pp_formatter_t* saved = __pp.items;
-    __pp.items = realloc(__pp.items, (__pp.capacity *= 2) * sizeof(item));
-    if(__pp.items == NULL) {
-      __pp.items = saved;
-      __pp.capacity /= 2;
-      return -1;
-    }
-  }
-  __pp.items[__pp.count++] = item;
+  __pp[(int)specifier].function = formatter_func;
 
   return 0;
 }
